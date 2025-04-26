@@ -12,10 +12,8 @@ IMG_HEIGHT = 66
 MAX_EPOCHS = 30
 
 def main():
-    if len(sys.argv) not in [2, 3]:
-        sys.exit("Usage: python train_model.py model_directory")
-
-    saved_model_dir = sys.argv[1]
+    # ✅ 버전 자동 할당
+    saved_model_dir = get_new_version_dir()
 
     # ✅ 데이터 로더 준비
     train_loader = WaymoDatasetLoader(
@@ -53,7 +51,7 @@ def main():
     )
 
     # 모델 학습
-    print("Training model...")
+    print(f"Training model... (saving to {saved_model_dir})")
     history = model.fit(
         train_loader,
         validation_data=val_loader,
@@ -68,10 +66,8 @@ def main():
     print(f"Test loss: {test_loss:.4f}")
 
     # 모델 저장
-    model_file = os.path.join('saved_models', saved_model_dir)
-    os.makedirs('saved_models', exist_ok=True)
-    model.save(model_file)
-    print(f"Model saved to {model_file}.")
+    model.save(saved_model_dir)
+    print(f"✅ Model saved to {saved_model_dir}.")
 
     # ✅ Test Set 예측
     y_true = []
@@ -116,6 +112,27 @@ def main():
     plt.legend()
     plt.grid()
     plt.show()
+
+def get_new_version_dir(base_dir='saved_models'):
+    """
+    saved_models/ 안에 version_0, version_1, ... 이런 식으로 폴더가 있으면
+    가장 큰 번호 +1로 새 버전을 만들어서 경로를 리턴
+    """
+    os.makedirs(base_dir, exist_ok=True)
+
+    existing_versions = [
+        int(d.replace('version_', '')) for d in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, d)) and d.startswith('version_')
+    ]
+
+    if existing_versions:
+        next_version = max(existing_versions) + 1
+    else:
+        next_version = 0
+
+    new_version_dir = os.path.join(base_dir, f"version_{next_version}")
+    os.makedirs(new_version_dir, exist_ok=True)
+    return new_version_dir
 
 def get_model():
     input_shape = (IMG_HEIGHT, IMG_WIDTH, 3)
