@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from WaymoDatasetLoader import WaymoDatasetLoader
+from tqdm.keras import TqdmCallback
 
 # 설정
 IMG_WIDTH = 200
@@ -56,8 +57,10 @@ def main():
         train_loader,
         validation_data=val_loader,
         epochs=MAX_EPOCHS,
-        callbacks=[early_stopping],
-        verbose=1
+        callbacks=[early_stopping, TqdmCallback(verbose=2)],
+        steps_per_epoch=len(train_loader),
+        validation_steps=len(val_loader),
+        verbose=0
     )
 
     # 테스트 데이터 평가

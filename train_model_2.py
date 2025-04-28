@@ -1,81 +1,89 @@
 import os
-import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import cv2
-from sklearn.model_selection import train_test_split
+from WaymoDatasetLoader_2 import WaymoDatasetLoader
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
-# 하이퍼파라미터 설정
-TEST_SIZE = 0.2
-EPOCHS = 10
 IMG_WIDTH = 200
 IMG_HEIGHT = 66
-FPS = 20
+N_FRAMES = 5
+MAX_EPOCHS = 30
 
 def main():
-    # Check command-line arguments
-    if len(sys.argv) not in [2, 3]:
-        sys.exit("Usage: python train_model_rgb.py model_directory")
+    saved_model_dir = get_new_version_dir()
 
-    saved_model_dir = sys.argv[1]
-
-    # 데이터 경로
-    video_filename = os.path.join('data', 'train.mp4')
-    label_filename = os.path.join('data', 'train.txt')
-
-    # Load data
-    images, labels = load_data(video_filename, label_filename)
-
-    # Split data
-    x_train, x_test, y_train, y_test = train_test_split(
-        np.array(images), np.array(labels), test_size=TEST_SIZE, shuffle=False
+    train_loader = WaymoDatasetLoader(
+        data_dir="data/train",
+        batch_size=32,
+        mode='train',
+        img_width=IMG_WIDTH,
+        img_height=IMG_HEIGHT,
+        n_frames=N_FRAMES
+    )
+    val_loader = WaymoDatasetLoader(
+        data_dir="data/test",
+        batch_size=32,
+        mode='val',
+        img_width=IMG_WIDTH,
+        img_height=IMG_HEIGHT,
+        n_frames=N_FRAMES
+    )
+    test_loader = WaymoDatasetLoader(
+        data_dir="data/test",
+        batch_size=32,
+        mode='test',
+        img_width=IMG_WIDTH,
+        img_height=IMG_HEIGHT,
+        n_frames=N_FRAMES
     )
 
-    # Build model
-    model = get_rgb_model()
+    model = get_model_3dcnn(n_frames=N_FRAMES, img_height=IMG_HEIGHT, img_width=IMG_WIDTH, channels=3)
 
-    # Train model
-    print("Training model")
-    history = model.fit(x_train, y_train, epochs=EPOCHS)
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=3,
+        restore_best_weights=True
+    )
 
-    # Evaluate
-    test_loss = model.evaluate(x_test, y_test, verbose=2)
-    print(f"Test loss: {test_loss:.4f}")
+    history = model.fit(
+        train_loader,
+        validation_data=val_loader,
+        epochs=MAX_EPOCHS,
+        callbacks=[early_stopping],
+        verbose=1
+    )
 
-    # Save model
-    model_file = os.path.join('saved_models', saved_model_dir)
-    model.save(model_file)
-    print(f"Model saved to {model_file}.")
+    model.save(saved_model_dir)
+    print(f"✅ Model saved to {saved_model_dir}")
 
-    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+    evaluate_model(model, test_loader)
+    plot_loss(history)
 
-    # Predict
-    y_pred = model.predict(x_test)
+def evaluate_model(model, test_loader):
+    y_true = []
+    y_pred = []
 
-    # 평가지표 계산
-    mse = mean_squared_error(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
+    for x_batch, y_batch in test_loader:
+        preds = model.predict(x_batch, verbose=0)
+        y_true.extend(y_batch)
+        y_pred.extend(preds)
+
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+
+    mse = mean_squared_error(y_true.flatten(), y_pred.flatten())
+    mae = mean_absolute_error(y_true.flatten(), y_pred.flatten())
+    r2 = r2_score(y_true.flatten(), y_pred.flatten())
 
     print(f"✅ Evaluation Metrics:")
     print(f"MSE: {mse:.4f}")
     print(f"MAE: {mae:.4f}")
     print(f"R² Score: {r2:.4f}")
 
-    # Plot loss
-    plt.plot(history.history['loss'], label='train loss')
-    plt.title('Model Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('MSE Loss')
-    plt.legend()
-    plt.show()
-
-    # Predict and plot Ground Truth vs Prediction
-    y_pred = model.predict(x_test)
-
+    # ✅ 여기 추가: 예측 결과 vs 실제 속도 비교
     plt.figure(figsize=(10, 6))
-    plt.plot(y_test.flatten(), label='Ground Truth Speed', linestyle='--')
+    plt.plot(y_true.flatten(), label='Ground Truth Speed', linestyle='--')
     plt.plot(y_pred.flatten(), label='Predicted Speed', linestyle='-')
     plt.title('Ground Truth vs Predicted Speed on Test Set')
     plt.xlabel('Sample Index')
@@ -84,75 +92,52 @@ def main():
     plt.grid()
     plt.show()
 
-def load_data(video_filename, label_filename):
-    """
-    Load RGB frames and labels.
-    """
+def plot_loss(history):
+    plt.figure()
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE Loss')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
-    cap = cv2.VideoCapture(video_filename)
-    speeds = load_labels(label_filename)
+import tensorflow as tf
 
-    images = []
-    labels = []
+def get_model_3dcnn(n_frames=5, img_height=66, img_width=200, channels=3):
+    input_shape = (n_frames, img_height, img_width, channels)
 
-    print("Loading frames (RGB only)")
-    while True:
-        ret, frame = cap.read()
+    inputs = tf.keras.Input(shape=input_shape)
 
-        if not ret or frame is None:
-            break
+    x = tf.keras.layers.Conv3D(32, (3, 5, 5), activation='relu', strides=(1, 2, 2), padding='same')(inputs)
+    x = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2), padding='same')(x)
 
-        # ✅ Optical Flow 없이 RGB 프레임 그대로 사용
-        img = cv2.resize(frame, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
+    x = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', strides=(1, 2, 2), padding='same')(x)
+    x = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2), padding='same')(x)
 
-        try:
-            v = next(speeds)
-        except StopIteration:
-            break
+    x = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', strides=(1, 2, 2), padding='same')(x)
+    x = tf.keras.layers.GlobalAveragePooling3D()(x)
 
-        images.append(img)
-        labels.append(v)
+    x = tf.keras.layers.Dense(256, activation='relu')(x)
+    x = tf.keras.layers.Dense(n_frames - 1)(x)
 
-    cap.release()
-    cv2.destroyAllWindows()
-
-    print("Loading Frames Done!")
-
-    return np.array(images), np.array(labels)
-
-def load_labels(filename):
-    """
-    Yield speeds from txt file line by line
-    """
-
-    for row in open(filename, 'r'):
-        yield float(row)
-
-def get_rgb_model():
-    """
-    Build CNN model for RGB input
-    """
-
-    input_shape = (IMG_HEIGHT, IMG_WIDTH, 3)
-
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.BatchNormalization(input_shape=input_shape),
-
-        tf.keras.layers.Conv2D(32, (5, 5), activation='elu', strides=(2, 2)),
-        tf.keras.layers.Conv2D(64, (5, 5), activation='elu', strides=(2, 2)),
-        tf.keras.layers.Conv2D(128, (3, 3), activation='elu', strides=(2, 2)),
-
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Flatten(),
-
-        tf.keras.layers.Dense(256, activation='elu'),
-        tf.keras.layers.Dense(64, activation='elu'),
-        tf.keras.layers.Dense(1, name='output')
-    ])
-
+    model = tf.keras.Model(inputs=inputs, outputs=x)
     model.compile(optimizer='adam', loss='mse')
 
     return model
+
+
+def get_new_version_dir(base_dir='saved_models'):
+    os.makedirs(base_dir, exist_ok=True)
+    existing_versions = [
+        int(d.replace('version_', '')) for d in os.listdir(base_dir)
+        if os.path.isdir(os.path.join(base_dir, d)) and d.startswith('version_')
+    ]
+    next_version = max(existing_versions) + 1 if existing_versions else 0
+    new_version_dir = os.path.join(base_dir, f"version_{next_version}")
+    os.makedirs(new_version_dir, exist_ok=True)
+    return new_version_dir
 
 if __name__ == "__main__":
     main()

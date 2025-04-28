@@ -40,11 +40,13 @@ for f_idx, filename in enumerate(camera_files):
                 timestamp = row['key.frame_timestamp_micros']
                 img_data = row['[CameraImageComponent].image']
                 vx = row['[CameraImageComponent].velocity.linear_velocity.x']
+                vy = row['[CameraImageComponent].velocity.linear_velocity.y']
+                speed = np.sqrt(vx ** 2 + vy ** 2)
 
                 frame_list.append({
                     "timestamp": timestamp,
                     "image": img_data,
-                    "speed": vx
+                    "speed": speed
                 })
 
             except Exception as inner_e:
