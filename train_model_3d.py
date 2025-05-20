@@ -2,7 +2,8 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from WaymoDatasetLoader_2 import WaymoDatasetLoader
+from WaymoDatasetLoader_3D import WaymoDatasetLoader
+from get_model_3dcnn_with_attention import get_model_3dcnn_with_attention
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 IMG_WIDTH = 200
@@ -38,7 +39,9 @@ def main():
         n_frames=N_FRAMES
     )
 
-    model = get_model_3dcnn(n_frames=N_FRAMES, img_height=IMG_HEIGHT, img_width=IMG_WIDTH, channels=3)
+    model = get_model_3dcnn_with_attention(
+        n_frames=N_FRAMES, img_height=IMG_HEIGHT, img_width=IMG_WIDTH, channels=3
+    )
 
     early_stopping = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss',
@@ -81,7 +84,7 @@ def evaluate_model(model, test_loader):
     print(f"MAE: {mae:.4f}")
     print(f"R² Score: {r2:.4f}")
 
-    # ✅ 여기 추가: 예측 결과 vs 실제 속도 비교
+    # ✅ Plot 추가
     plt.figure(figsize=(10, 6))
     plt.plot(y_true.flatten(), label='Ground Truth Speed', linestyle='--')
     plt.plot(y_pred.flatten(), label='Predicted Speed', linestyle='-')
@@ -102,30 +105,6 @@ def plot_loss(history):
     plt.legend()
     plt.grid()
     plt.show()
-
-
-def get_model_3dcnn(n_frames=5, img_height=66, img_width=200, channels=3):
-    input_shape = (n_frames, img_height, img_width, channels)
-
-    inputs = tf.keras.Input(shape=input_shape)
-
-    x = tf.keras.layers.Conv3D(32, (3, 5, 5), activation='relu', strides=(1, 2, 2), padding='same')(inputs)
-    x = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2), padding='same')(x)
-
-    x = tf.keras.layers.Conv3D(64, (3, 3, 3), activation='relu', strides=(1, 2, 2), padding='same')(x)
-    x = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2), padding='same')(x)
-
-    x = tf.keras.layers.Conv3D(128, (3, 3, 3), activation='relu', strides=(1, 2, 2), padding='same')(x)
-    x = tf.keras.layers.GlobalAveragePooling3D()(x)
-
-    x = tf.keras.layers.Dense(256, activation='relu')(x)
-    x = tf.keras.layers.Dense(n_frames - 1)(x)
-
-    model = tf.keras.Model(inputs=inputs, outputs=x)
-    model.compile(optimizer='adam', loss='mse')
-
-    return model
-
 
 def get_new_version_dir(base_dir='saved_models'):
     os.makedirs(base_dir, exist_ok=True)
