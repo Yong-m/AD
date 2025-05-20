@@ -1,7 +1,9 @@
-import pandas as pd
+import cv2
 
-# 아무 camera_image parquet 파일 하나 불러서 컬럼 확인
-df = pd.read_parquet(r"E:\dataset\testing\camera_image\11987368976578218644_1340_000_1360_000.parquet")
-
-print(df.columns)
-print(df.head())
+cap = cv2.VideoCapture(r"C:\Users\User\PycharmProjects\AD\data\input.mp4")
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    print(frame.shape)  # (480, 848, 3) 이어야 정상
+cap.release()
